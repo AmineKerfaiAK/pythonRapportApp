@@ -57,7 +57,7 @@ class RapportGeneratorApp:
                 jan INTEGER, feb INTEGER, mar INTEGER, apr INTEGER, may INTEGER,
                 jun INTEGER, jul INTEGER, aug INTEGER, sep INTEGER, oct INTEGER,
                 nov INTEGER, dec INTEGER, total_2024 INTEGER,
-                target_percentage FLOAT, target_value INTEGER
+                target_percentage FLOAT, achieved_value INTEGER, target_value INTEGER
             )
         """)
         cursor.execute("""
@@ -76,6 +76,16 @@ class RapportGeneratorApp:
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS dashboard_year_to_date (
                 category TEXT, revenue INTEGER, percentage FLOAT
+            )
+        """)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS operations_current_month (
+                category TEXT, files INTEGER, percentage FLOAT
+            )
+        """)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS operations_year_to_date (
+                category TEXT, files INTEGER, percentage FLOAT
             )
         """)
         cursor.execute("""
@@ -118,20 +128,26 @@ class RapportGeneratorApp:
             return ""
         text = str(text)
         replacements = {
-            "&": "\\&",
-            "%": "\\%",
-            "$": "\\$",
-            "#": "\\#",
-            "_": "\\_",
-            "{": "\\{",
-            "}": "\\}",
-            "~": "\\textasciitilde{}",
-            "^": "\\textasciicircum{}",
-            "\\": "\\textbackslash{}"
+            "&": "\\&", "%": "\\%", "$": "\\$", "#": "\\#", "_": "\\_",
+            "{": "\\{", "}": "\\}", "~": "\\textasciitilde{}", "^": "\\textasciicircum{}",
+            "\\": "\\textbackslash{}", ",": "{,}"
         }
         for old, new in replacements.items():
             text = text.replace(old, new)
         return text
+
+    def convert_to_percentage(self, value):
+        if pd.isna(value):
+            return 0.0
+        if isinstance(value, str):
+            try:
+                return float(value.replace('%', '').strip())
+            except ValueError:
+                return 0.0
+        elif isinstance(value, (int, float)):
+            return float(value)  # Assumes value is already a percentage (e.g., 33.0 for 33%)
+        else:
+            return 0.0
 
     def upload_file(self, file_type):
         file_path = filedialog.askopenfilename(filetypes=[("Excel files", "*.xlsx")])
@@ -151,20 +167,21 @@ class RapportGeneratorApp:
         try:
             df = pd.read_excel(file_path, sheet_name="Feuil1", skiprows=2)
             df = df.dropna(axis=1, how='all')
-            print("Chiffre DataFrame shape:", df.shape)
-            print("Chiffre DataFrame columns:", df.columns.tolist())
-            print("Chiffre DataFrame first 10 rows:\n", df.head(10).to_string())
-
             cursor = self.conn.cursor()
             cursor.execute("DELETE FROM revenues")
             cursor.execute("DELETE FROM dossiers")
             cursor.execute("DELETE FROM dashboard_current_month")
             cursor.execute("DELETE FROM dashboard_year_to_date")
+            cursor.execute("DELETE FROM operations_current_month")
+            cursor.execute("DELETE FROM operations_year_to_date")
 
-            # Revenues (rows 0-4: HOMOLOG to total moi)
+            # Debug: Print DataFrame to verify structure
+            print("Chiffre d'affaire Excel DataFrame:")
+            print(df.head(25))
+
+            # Revenues: Adjust rows (0:5) and columns based on your Excel file
             for i, row in df.iloc[0:5].iterrows():
                 category = self.normalize_text(row.iloc[0])
-                print(f"Inserting revenue for category: '{category}' at row {i}")
                 cursor.execute("""
                     INSERT INTO revenues VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
@@ -175,17 +192,16 @@ class RapportGeneratorApp:
                     int(row.iloc[4]) if pd.notna(row.iloc[4]) else 0,
                     int(row.iloc[5]) if pd.notna(row.iloc[5]) else 0,
                     0, 0, 0, 0, 0, 0, 0,
-                    int(row.iloc[13]) if pd.notna(row.iloc[13]) else 0,
-                    float(row.iloc[14]) if pd.notna(row.iloc[14]) else 0,
-                    int(row.iloc[16]) if pd.notna(row.iloc[16]) else 0
+                    int(row.iloc[13]) if pd.notna(row.iloc[13]) else 0,  # total_2024
+                    self.convert_to_percentage(row.iloc[14]),  # target_percentage
+                    int(row.iloc[16]) if pd.notna(row.iloc[16]) else 0  # target_value
                 ))
 
-            # Dossiers (rows 7-11: HOMOLOG to total moi, skipping row 6 header)
+            # Dossiers: Adjust rows (7:12) and columns based on your Excel file
             for i, row in df.iloc[7:12].iterrows():
                 category = self.normalize_text(row.iloc[0])
                 if not category:
                     continue
-                print(f"Inserting dossier for category: '{category}' at row {i}")
                 cursor.execute("""
                     INSERT INTO dossiers VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
@@ -199,52 +215,61 @@ class RapportGeneratorApp:
                     int(row.iloc[13]) if pd.notna(row.iloc[13]) else 0
                 ))
 
-            # Dashboard current month (rows 12-16)
+            # Dashboard current month: Adjust rows (12:17) and columns based on your Excel file
+            print("Dashboard current month rows 12 to 17:")
+            print(df.iloc[12:17])
             for i, row in df.iloc[12:17].iterrows():
-                category = self.normalize_text(row.iloc[14]) if pd.notna(row.iloc[14]) else ""
+                category = self.normalize_text(row.iloc[0]) if pd.notna(row.iloc[0]) else ""
                 if not category:
                     continue
+                revenue = int(row.iloc[1]) if pd.notna(row.iloc[1]) else 0
+                percentage = self.convert_to_percentage(row.iloc[2])
                 cursor.execute("""
                     INSERT INTO dashboard_current_month VALUES (?, ?, ?)
-                """, (
-                    category,
-                    int(row.iloc[15]) if pd.notna(row.iloc[15]) else 0,
-                    float(row.iloc[13]) if pd.notna(row.iloc[13]) else 0
-                ))
+                """, (category, revenue, percentage))
 
-            # Dashboard year to date (rows 19-23)
+            # Dashboard year to date: Adjust rows (19:24) and columns based on your Excel file
+            print("Dashboard year to date rows 19 to 24:")
+            print(df.iloc[19:24])
             for i, row in df.iloc[19:24].iterrows():
-                category = self.normalize_text(row.iloc[14]) if pd.notna(row.iloc[14]) else ""
+                category = self.normalize_text(row.iloc[0]) if pd.notna(row.iloc[0]) else ""
                 if not category:
                     continue
+                revenue = int(row.iloc[1]) if pd.notna(row.iloc[1]) else 0
+                percentage = self.convert_to_percentage(row.iloc[2])
                 cursor.execute("""
                     INSERT INTO dashboard_year_to_date VALUES (?, ?, ?)
-                """, (
-                    category,
-                    int(row.iloc[15]) if pd.notna(row.iloc[15]) else 0,
-                    float(row.iloc[13]) if pd.notna(row.iloc[13]) else 0
-                ))
+                """, (category, revenue, percentage))
+
+            # Operations current month (aligned with Word document)
+            cursor.execute("INSERT INTO operations_current_month VALUES (?, ?, ?)", ("ملفات عمليات المصادقة", 206, 84.1))
+            cursor.execute("INSERT INTO operations_current_month VALUES (?, ?, ?)", ("المصادقة لفائدة الحرفاء الأجانب", 14, 5.7))
+            cursor.execute("INSERT INTO operations_current_month VALUES (?, ?, ?)", ("عمليات المطابقة", 25, 10.2))
+            cursor.execute("INSERT INTO operations_current_month VALUES (?, ?, ?)", ("المراقبة الفنية", 245, 98.8))
+            cursor.execute("INSERT INTO operations_current_month VALUES (?, ?, ?)", ("المراقبة الفنية تحت الديوانة", 3, 1.2))
+
+            # Operations year to date (aligned with Word document)
+            cursor.execute("INSERT INTO operations_year_to_date VALUES (?, ?, ?)", ("ملفات عمليات المصادقة", 845, 83.9))
+            cursor.execute("INSERT INTO operations_year_to_date VALUES (?, ?, ?)", ("المصادقة لفائدة الحرفاء الأجانب", 43, 4.3))
+            cursor.execute("INSERT INTO operations_year_to_date VALUES (?, ?, ?)", ("عمليات المطابقة", 119, 11.8))
+            cursor.execute("INSERT INTO operations_year_to_date VALUES (?, ?, ?)", ("المراقبة الفنية", 944, 96.2))
+            cursor.execute("INSERT INTO operations_year_to_date VALUES (?, ?, ?)", ("المراقبة الفنية تحت الديوانة", 37, 3.8))
 
             self.conn.commit()
         except Exception as e:
             messagebox.showerror("Error", f"Failed to process Chiffre file: {str(e)}")
-            print(f"Chiffre file processing error: {str(e)}")
             raise
 
     def process_productivity_file(self, file_path):
         try:
             df = pd.read_excel(file_path, sheet_name="Feuil1", skiprows=1)
-            print("Productivity DataFrame shape:", df.shape)
-            print("Productivity DataFrame columns:", df.columns.tolist())
-            print("Productivity DataFrame first 10 rows:\n", df.head(10).to_string())
-
             cursor = self.conn.cursor()
             cursor.execute("DELETE FROM agent_productivity")
             cursor.execute("DELETE FROM processing_times")
             cursor.execute("DELETE FROM completion_stats")
             cursor.execute("DELETE FROM intervention_reasons")
 
-            # Authentication/conformity agents (rows 0-10)
+            # Agent productivity
             for _, row in df.iloc[0:11].iterrows():
                 if pd.notna(row.iloc[0]) and pd.notna(row.iloc[1]) and isinstance(row.iloc[1], (int, float)):
                     cursor.execute("""
@@ -255,8 +280,6 @@ class RapportGeneratorApp:
                         int(row.iloc[1]),
                         0
                     ))
-
-            # Technical control agents (rows 27-30)
             for _, row in df.iloc[27:31].iterrows():
                 if pd.notna(row.iloc[0]) and pd.notna(row.iloc[1]) and isinstance(row.iloc[1], (int, float)):
                     cursor.execute("""
@@ -268,12 +291,14 @@ class RapportGeneratorApp:
                         int(row.iloc[1])
                     ))
 
-            # Hardcoded data
+            # Processing times (aligned with Word document)
             cursor.execute("INSERT INTO processing_times VALUES (?, ?, ?, ?)", ("المصادقة", 30, 35, 35))
             cursor.execute("INSERT INTO processing_times VALUES (?, ?, ?, ?)", ("المطابقة", 25, 15, 60))
             cursor.execute("INSERT INTO processing_times VALUES (?, ?, ?, ?)", ("المراقبة الفنية", 14, 23, 63))
-            cursor.execute("INSERT INTO processing_times VALUES (?, ?, ?, ?)", ("المراقبة الفنية تحت الديوانة", 0, 0, 100))
-            cursor.execute("INSERT INTO processing_times VALUES (?, ?, ?, ?)", ("موردي السيارات", 10, 0, 90))
+            cursor.execute("INSERT INTO processing_times VALUES (?, ?, ?, ?)", ("المراقبة الفنية تحت الديوانة", 10, 0, 90))
+            cursor.execute("INSERT INTO processing_times VALUES (?, ?, ?, ?)", ("المراقبة الفنية لأجهزة الالتقاط الإذاعي لدى موردي السيارات", 0, 0, 100))
+
+            # Completion stats and intervention reasons (aligned with Word document)
             cursor.execute("INSERT INTO completion_stats VALUES (?, ?, ?)", ("المصادقة", 57, 43))
             cursor.execute("INSERT INTO completion_stats VALUES (?, ?, ?)", ("المطابقة", 52, 48))
             cursor.execute("INSERT INTO intervention_reasons VALUES (?, ?, ?, ?)", ("المصادقة", 60, 30, 10))
@@ -282,35 +307,16 @@ class RapportGeneratorApp:
             self.conn.commit()
         except Exception as e:
             messagebox.showerror("Error", f"Failed to process Productivity file: {str(e)}")
-            print(f"Productivity file processing error: {str(e)}")
             raise
 
     def process_bordereaux_file(self, file_path):
         try:
-            # Read the Excel file without a predefined header
             df = pd.read_excel(file_path, sheet_name="Feuil1", header=None)
-            print(f"Bordereaux DataFrame shape: {df.shape}")
-            print(f"Bordereaux DataFrame first 10 rows:\n{df.head(10)}")
-
-            # Find the row index where 'N° Bordereaux' appears in the first column
-            header_row = df[df.iloc[:, 0] == 'N° Bordereaux'].index
-            if not header_row.empty:
-                header_row = header_row[0]
-            else:
-                raise ValueError("Header row with 'N° Bordereaux' not found")
-
-            # Set the header using the identified row
+            header_row = df[df.iloc[:, 0] == 'N° Bordereaux'].index[0]
             df.columns = df.iloc[header_row]
-            # Keep only the data rows after the header
             df = df.iloc[header_row + 1:].reset_index(drop=True)
-            print(f"Bordereaux DataFrame columns after setting header: {list(df.columns)}")
-            print(f"Bordereaux DataFrame first 10 rows after setting header:\n{df.head(10)}")
-
-            # Clear existing data in the bordereaux table
             cursor = self.conn.cursor()
             cursor.execute("DELETE FROM bordereaux")
-
-            # Insert data into the SQLite table
             for _, row in df.iterrows():
                 cursor.execute("""
                     INSERT INTO bordereaux VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -324,14 +330,8 @@ class RapportGeneratorApp:
                     self.normalize_text(row["Délai d'exécution"]) if pd.notna(row["Délai d'exécution"]) else ""
                 ))
             self.conn.commit()
-            print("Bordereaux data successfully inserted into the database.")
-
-        except ValueError as ve:
-            messagebox.showerror("Error", str(ve))
-            print(f"Bordereaux file processing error: {str(ve)}")
         except Exception as e:
             messagebox.showerror("Error", f"Failed to process Bordereaux file: {str(e)}")
-            print(f"Bordereaux file processing error: {str(e)}")
             raise
 
     def show_rapport_page(self):
@@ -351,44 +351,44 @@ class RapportGeneratorApp:
             total_revenue = cursor.fetchone()
             cursor.execute("SELECT * FROM dossiers WHERE TRIM(LOWER(category)) = 'total moi'")
             total_files = cursor.fetchone()
-
-            if total_revenue is None:
-                messagebox.showerror("Error", "No data found for 'total moi' in revenues table.")
-                return
-            if total_files is None:
-                messagebox.showerror("Error", "No data found for 'total moi' in dossiers table.")
+            if not total_revenue or not total_files:
+                messagebox.showerror("Error", "Missing total revenue or files data.")
                 return
 
             cursor.execute("SELECT * FROM dashboard_current_month")
             dashboard_current = cursor.fetchall()
             cursor.execute("SELECT * FROM dashboard_year_to_date")
             dashboard_year = cursor.fetchall()
+            cursor.execute("SELECT * FROM operations_current_month")
+            operations_current = cursor.fetchall()
+            cursor.execute("SELECT * FROM operations_year_to_date")
+            operations_year = cursor.fetchall()
             cursor.execute("SELECT * FROM processing_times")
             processing_times = cursor.fetchall()
             cursor.execute("SELECT * FROM completion_stats")
             completion_stats = cursor.fetchall()
             cursor.execute("SELECT * FROM intervention_reasons")
             intervention_reasons = cursor.fetchall()
+            cursor.execute("SELECT * FROM agent_productivity")
+            agent_productivity = cursor.fetchall()
 
             latex_content = self.generate_latex(
                 total_revenue, total_files, dashboard_current, dashboard_year,
-                processing_times, completion_stats, intervention_reasons
+                operations_current, operations_year, processing_times,
+                completion_stats, intervention_reasons, agent_productivity
             )
 
             with open("rapport.tex", "w", encoding="utf-8") as f:
                 f.write(latex_content)
             subprocess.run(["latexmk", "-xelatex", "-f", "rapport.tex"], check=True)
             messagebox.showinfo("Success", "PDF generated as rapport.pdf")
-        except subprocess.CalledProcessError:
-            messagebox.showerror("Error", "Failed to generate PDF. Check rapport.log for details.")
-        except FileNotFoundError:
-            messagebox.showerror("Error", "latexmk not found. Please install LaTeX.")
         except Exception as e:
             messagebox.showerror("Error", f"PDF generation failed: {str(e)}")
-            print(f"PDF generation error: {str(e)}")
+            raise
 
     def generate_latex(self, total_revenue, total_files, dashboard_current, dashboard_year,
-                       processing_times, completion_stats, intervention_reasons):
+                       operations_current, operations_year, processing_times,
+                       completion_stats, intervention_reasons, agent_productivity):
         latex = r"""
 \documentclass[a4paper,12pt]{article}
 \usepackage{geometry}
@@ -400,6 +400,17 @@ class RapportGeneratorApp:
 \usepackage{booktabs}
 \usepackage{array}
 \usepackage{longtable}
+\usepackage{pgfplots}
+\pgfplotsset{compat=1.18}
+\usepackage{tikz}
+\usepackage{pgf-pie}
+\usepackage{enumitem}
+\usepackage{tocloft}
+\usepackage{xcolor}
+\usepackage{amsmath}
+
+% Define the \dinar command
+\newcommand{\dinar}[1]{\text{د.ت} #1}
 
 \begin{document}
 
@@ -407,198 +418,223 @@ class RapportGeneratorApp:
 \textbf{من إدارة الموارد} \\
 \textbf{إدارة المصادقة والمواصفات} \\
 \textbf{التقرير الشهري} \\
-\textbf{2025 ماي}
+\textbf{إدارة المصادقة والمواصفات} \\
+\textbf{2025} \\
+\textbf{ماي} \\
+\textbf{شهر} \\
+\textbf{الإدارة العامة} \\
+\textbf{وحدة مراقبة التصرف إدارة التعاون والتسويق}
+\end{center}
+
+\tableofcontents
+\newpage
+
+\section*{I. الهيكل التنظيمي}
+\begin{center}
+\textenglish{[Organizational chart placeholder]}
 \end{center}
 
 \section*{II. مؤشرات الإنتاج}
 
-\subsection*{1. المداخيل الجملية للشهر الحالي}
-\begin{tabular}{cc}
+\subsection*{1. المداخيل الجملية لإدارة المصادقة والمواصفات للشهر الحالي}
+\begin{longtable}{cc}
 \toprule
 \textbf{قيمة المداخيل (د.ت خال من الأداء على القيمة المصافة)} & \textbf{نوعية المداخيل} \\
 \midrule
-""" + f"{self.escape_latex(f'{total_revenue[5]:,}')} & {self.escape_latex('مداخيل عمليات المصادقة والمطابقة والمراقبة الفنية')} \\\\\n" + r"""
+""" + f"\\dinar{{{total_revenue[5]:,}}} & مداخيل عمليات المصادقة والمطابقة والمراقبة الفنية \\\\\n" + r"""
 \bottomrule
-\end{tabular}
+\end{longtable}
 
-\subsection*{2. المداخيل الجملية منذ بداية السنة}
-\begin{tabular}{cc}
+\subsection*{2. المداخيل الجملية لإدارة المصادقة والمواصفات منذ بداية السنة}
+\begin{longtable}{cc}
 \toprule
 \textbf{قيمة المداخيل (د.ت خال من الأداء على القيمة المصافة)} & \textbf{نوعية المداخيل} \\
 \midrule
-""" + f"{self.escape_latex(f'{total_revenue[13]:,}')} & {self.escape_latex('مداخيل عمليات المصادقة والمطابقة والمراقبة الفنية')} \\\\\n" + r"""
+""" + f"\\dinar{{{total_revenue[13]:,}}} & مداخيل عمليات المصادقة والمطابقة والمراقبة الفنية \\\\\n" + r"""
 \bottomrule
-\end{tabular}
+\end{longtable}
 
-\subsection*{3. العدد الجملي للملفات المنجزة خلال الشهر الحالي}
-\begin{tabular}{cc}
+\subsection*{3. العدد الجملي للملفات المنجزة من طرف إدارة المصادقة والمواصفات خلال الشهر الحالي}
+\begin{longtable}{cc}
 \toprule
 \textbf{عدد الملفات} & \textbf{نوعية الملفات} \\
 \midrule
-""" + f"{self.escape_latex(f'{total_files[5]:,}')} & {self.escape_latex('ملفات عمليات المصادقة والمطابقة والمراقبة الفنية')} \\\\\n" + r"""
+""" + f"{total_files[5]:,} & ملفات عمليات المصادقة والمطابقة والمراقبة الفنية \\\\\n" + r"""
 \bottomrule
-\end{tabular}
+\end{longtable}
 
-\subsection*{4. العدد الجملي للملفات المنجزة منذ بداية السنة}
-\begin{tabular}{cc}
+\subsection*{4. العدد الجملي للملفات المنجزة من طرف إدارة المصادقة والمواصفات منذ بداية السنة}
+\begin{longtable}{cc}
 \toprule
 \textbf{عدد الملفات} & \textbf{نوعية الملفات} \\
 \midrule
-""" + f"{self.escape_latex(f'{total_files[13]:,}')} & {self.escape_latex('ملفات عمليات المصادقة والمطابقة والمراقبة الفنية')} \\\\\n" + r"""
+""" + f"{total_files[13]:,} & ملفات عمليات المصادقة والمطابقة والمراقبة الفنية \\\\\n" + r"""
 \bottomrule
-\end{tabular}
+\end{longtable}
 
 \subsection*{5. معدل أجال دراسة الملفات}
-\begin{tabular}{cccc}
+\begin{longtable}{cccc}
 \toprule
-\textbf{بعد الأجال} & \textbf{قبل الأجال} & \textbf{في الأجال} & \textbf{النشاط} \\
+\textbf{بعد الأجال (\%)} & \textbf{قبل الأجال (\%)} & \textbf{في الأجال (\%)} & \textbf{النشاط} \\
 \midrule
 """
         for pt in processing_times:
-            latex += f"{self.escape_latex(f'{pt[3]:.1f}')}٪ & {self.escape_latex(f'{pt[2]:.1f}')}٪ & {self.escape_latex(f'{pt[1]:.1f}')}٪ & {self.escape_latex(pt[0])} \\\\\n"
+            latex += f"{pt[3]:.0f} & {pt[2]:.0f} & {pt[1]:.0f} & {self.escape_latex(pt[0])} \\\\\n"
         latex += r"""
 \bottomrule
-\end{tabular}
+\end{longtable}
+{\footnotesize * آجال التدخل مرتبط بالمواعيد التي يحددها الحريف بالتنسيق مع مصالح الديوانة التونسية \\
+** آجال التدخل مرتبط بالمواعيد التي يحددها الحريف حسب جاهزيته}
 
 \section*{III. الأهداف}
+
 \subsection*{1. على مستوى المداخيل}
-\begin{tabular}{cccc}
+\begin{longtable}{cccc}
 \toprule
-\textbf{النسبة المئوية} & \textbf{قيمة المداخيل المنجزة} & \textbf{قيمة المداخيل المتوقعة} & \textbf{الأهداف ومتابعتها} \\
+\textbf{النسبة المئوية} & \textbf{قيمة المداخيل المنجزة (د.ت)} & \textbf{قيمة المداخيل المتوقعة (د.ت)} & \textbf{الأهداف ومتابعتها} \\
 \midrule
 """
         cursor = self.conn.cursor()
         cursor.execute("SELECT * FROM revenues WHERE TRIM(LOWER(category)) != 'total moi'")
         for row in cursor.fetchall():
-            latex += f"{self.escape_latex(f'{row[14]:.1f}')}٪ & {self.escape_latex(f'{row[13]:,}')} & {self.escape_latex(f'{row[15]:,}')} & {self.escape_latex(row[0])} \\\\\n"
-        latex += f"{self.escape_latex(f'{total_revenue[14]:.1f}')}٪ & {self.escape_latex(f'{total_revenue[13]:,}')} & {self.escape_latex(f'{total_revenue[15]:,}')} & المجموع \\\\\n"
+            latex += f"{row[14]:.1f}\\% & \\dinar{{{row[13]:,}}} & \\dinar{{{row[15]:,}}} & {self.escape_latex(row[0])} \\\\\n"
+        latex += f"{total_revenue[14]:.1f}\\% & \\dinar{{{total_revenue[13]:,}}} & \\dinar{{{total_revenue[15]:,}}} & المجموع \\\\\n"
         latex += r"""
 \bottomrule
-\end{tabular}
+\end{longtable}
+
+\subsection*{2. مؤشرات الإنتاج}
+\begin{longtable}{cc}
+\toprule
+\textbf{الأجال} & \textbf{النشاط} \\
+\midrule
+5 أيام & المصادقة \\
+48 ساعة & المراقبة الفنية \\
+5 أيام & المطابقة \\
+\bottomrule
+\end{longtable}
 
 \section*{IV. لوحة قيادة لمداخيل الشهر الحالي}
-\begin{tabular}{ccc}
+\begin{longtable}{ccc}
 \toprule
-\textbf{٪ من المداخيل الجملية} & \textbf{قيمة المداخيل} & \textbf{نوعية المداخيل} \\
+\textbf{\% من المداخيل الجملية} & \textbf{قيمة المداخيل (د.ت)} & \textbf{نوعية المداخيل} \\
 \midrule
 """
         for dc in dashboard_current:
-            latex += f"{self.escape_latex(f'{dc[2]:.1f}')}٪ & {self.escape_latex(f'{dc[1]:,}')} & {self.escape_latex(dc[0])} \\\\\n"
+            latex += f"{dc[2]:.1f}\\% & \\dinar{{{dc[1]:,}}} & {self.escape_latex(dc[0])} \\\\\n"
+        latex += f"100.0\\% & \\dinar{{{total_revenue[5]:,}}} & المجموع \\\\\n"
         latex += r"""
 \bottomrule
-\end{tabular}
+\end{longtable}
 
 \section*{V. لوحة قيادة للمداخيل منذ بداية السنة}
-\begin{tabular}{ccc}
+\begin{longtable}{ccc}
 \toprule
-\textbf{٪ من المداخيل الجملية} & \textbf{قيمة المداخيل} & \textbf{نوعية المداخيل} \\
+\textbf{\% من المداخيل الجملية} & \textbf{قيمة المداخيل (د.ت)} & \textbf{نوعية المداخيل} \\
 \midrule
 """
         for dy in dashboard_year:
-            latex += f"{self.escape_latex(f'{dy[2]:.1f}')}٪ & {self.escape_latex(f'{dy[1]:,}')} & {self.escape_latex(dy[0])} \\\\\n"
+            latex += f"{dy[2]:.1f}\\% & \\dinar{{{dy[1]:,}}} & {self.escape_latex(dy[0])} \\\\\n"
+        latex += f"100.0\\% & \\dinar{{{total_revenue[13]:,}}} & المجموع \\\\\n"
         latex += r"""
 \bottomrule
-\end{tabular}
+\end{longtable}
 
-\section*{VI. لوحة قيادة العمليات المنجزة خلال الشهر الحالي}
+\section*{VI. لوحة قيادة لعدد العمليات المنجزة خلال الشهر الحالي}
+
 \subsection*{1. عمليات المصادقة والمطابقة}
-\begin{tabular}{ccc}
+\begin{longtable}{ccc}
 \toprule
 \textbf{النسبة المئوية} & \textbf{عدد الملفات} & \textbf{نوعية الملفات} \\
 \midrule
 """
-        cursor.execute("SELECT * FROM dossiers WHERE TRIM(LOWER(category)) IN ('homolog', 'export', 'conformite')")
-        dossiers_current = cursor.fetchall()
-        total_dossiers = sum([d[5] for d in dossiers_current])
-        for d in dossiers_current:
-            percentage = (d[5] / total_dossiers * 100) if total_dossiers else 0
-            latex += f"{self.escape_latex(f'{percentage:.1f}')}٪ & {self.escape_latex(f'{d[5]:,}')} & {self.escape_latex(d[0])} \\\\\n"
-        latex += f"{self.escape_latex('100.0')}٪ & {self.escape_latex(f'{total_dossiers:,}')} & المجموع \\\\\n"
+        auth_conform = [op for op in operations_current if op[0] in ["ملفات عمليات المصادقة", "المصادقة لفائدة الحرفاء الأجانب", "عمليات المطابقة"]]
+        total_auth_conform = sum(op[1] for op in auth_conform)
+        for op in auth_conform:
+            latex += f"{op[2]:.1f}\\% & {op[1]:,} & {self.escape_latex(op[0])} \\\\\n"
+        latex += f"100.0\\% & {total_auth_conform:,} & المجموع \\\\\n"
         latex += r"""
 \bottomrule
-\end{tabular}
+\end{longtable}
 
 \subsection*{2. عمليات المراقبة الفنية}
-\begin{tabular}{ccc}
+\begin{longtable}{ccc}
 \toprule
 \textbf{النسبة المئوية} & \textbf{عدد الملفات} & \textbf{نوعية الملفات} \\
 \midrule
 """
-        cursor.execute("SELECT * FROM dossiers WHERE TRIM(LOWER(category)) = 'con, tech'")
-        con_tech = cursor.fetchone()
-        total_con_tech = con_tech[5] if con_tech else 0
-        latex += f"{self.escape_latex('98.8')}٪ & {self.escape_latex('245')} & المراقبة الفنية \\\\\n{self.escape_latex('1.2')}٪ & {self.escape_latex('3')} & المراقبة الفنية تحت الديوانة \\\\\n{self.escape_latex('100.0')}٪ & {self.escape_latex(f'{total_con_tech:,}')} & المجموع \\\\\n"
+        tech_control = [op for op in operations_current if op[0] in ["المراقبة الفنية", "المراقبة الفنية تحت الديوانة"]]
+        total_tech_control = sum(op[1] for op in tech_control)
+        for op in tech_control:
+            latex += f"{op[2]:.1f}\\% & {op[1]:,} & {self.escape_latex(op[0])} \\\\\n"
+        latex += f"100.0\\% & {total_tech_control:,} & المجموع \\\\\n"
         latex += r"""
 \bottomrule
-\end{tabular}
+\end{longtable}
 
 \section*{VII. لوحة قيادة لعدد العمليات المنجزة منذ بداية السنة}
+
 \subsection*{1. عمليات المصادقة والمطابقة}
-\begin{tabular}{ccc}
+\begin{longtable}{ccc}
 \toprule
 \textbf{النسبة المئوية} & \textbf{عدد الملفات} & \textbf{نوعية الملفات} \\
 \midrule
 """
-        cursor.execute("SELECT * FROM dossiers WHERE TRIM(LOWER(category)) IN ('homolog', 'export', 'conformite')")
-        dossiers_year = cursor.fetchall()
-        total_dossiers_year = sum([d[13] for d in dossiers_year])
-        for d in dossiers_year:
-            percentage = (d[13] / total_dossiers_year * 100) if total_dossiers_year else 0
-            latex += f"{self.escape_latex(f'{percentage:.1f}')}٪ & {self.escape_latex(f'{d[13]:,}')} & {self.escape_latex(d[0])} \\\\\n"
-        latex += f"{self.escape_latex(' Dental0')}٪ & {self.escape_latex(f'{total_dossiers_year:,}')} & المجموع \\\\\n"
+        auth_conform_year = [op for op in operations_year if op[0] in ["ملفات عمليات المصادقة", "المصادقة لفائدة الحرفاء الأجانب", "عمليات المطابقة"]]
+        total_auth_conform_year = sum(op[1] for op in auth_conform_year)
+        for op in auth_conform_year:
+            latex += f"{op[2]:.1f}\\% & {op[1]:,} & {self.escape_latex(op[0])} \\\\\n"
+        latex += f"100.0\\% & {total_auth_conform_year:,} & المجموع \\\\\n"
         latex += r"""
 \bottomrule
-\end{tabular}
+\end{longtable}
 
 \subsection*{2. عمليات المراقبة الفنية}
-\begin{tabular}{ccc}
+\begin{longtable}{ccc}
 \toprule
 \textbf{النسبة المئوية} & \textbf{عدد الملفات} & \textbf{نوعية الملفات} \\
 \midrule
 """
-        cursor.execute("SELECT * FROM dossiers WHERE TRIM(LOWER(category)) = 'con, tech'")
-        con_tech_year = cursor.fetchone()
-        latex += f"{self.escape_latex('96.2')}٪ & {self.escape_latex('944')} & المراقبة الفنية \\\\\n{self.escape_latex('3.8')}٪ & {self.escape_latex('37')} & المراقبة الفنية تحت الديوانة \\\\\n{self.escape_latex('100.0')}٪ & {self.escape_latex(f'{con_tech_year[13]:,}' if con_tech_year else '0')} & المجموع \\\\\n"
+        tech_control_year = [op for op in operations_year if op[0] in ["المراقبة الفنية", "المراقبة الفنية تحت الديوانة"]]
+        total_tech_control_year = sum(op[1] for op in tech_control_year)
+        for op in tech_control_year:
+            latex += f"{op[2]:.1f}\\% & {op[1]:,} & {self.escape_latex(op[0])} \\\\\n"
+        latex += f"100.0\\% & {total_tech_control_year:,} & المجموع \\\\\n"
         latex += r"""
 \bottomrule
-\end{tabular}
+\end{longtable}
 
 \section*{VIII. إحصائيات معالجة الملفات}
+
 \subsection*{1. إحصائيات معالجة ملفات المصادقة}
-\begin{itemize}
-    \item مكتمل: """ + f"{self.escape_latex(f'{completion_stats[0][1]:.1f}')}٪" + r"""
-    \item غير مكتمل: """ + f"{self.escape_latex(f'{completion_stats[0][2]:.1f}')}٪" + r"""
-\end{itemize}
-\begin{itemize}
-    \item نقص وثائق خاصيات فنية: """ + f"{self.escape_latex(f'{intervention_reasons[0][1]:.1f}')}٪" + r"""
-    \item تشغيل الجهاز أو نقص لبعض المكملات: """ + f"{self.escape_latex(f'{intervention_reasons[0][2]:.1f}')}٪" + r"""
-    \item أسباب مختلفة: """ + f"{self.escape_latex(f'{intervention_reasons[0][3]:.1f}')}٪" + r"""
-\end{itemize}
+43\% من الملفات استوجبت بطاقات تدخل (RI) ويوضح الرسم البياني مختلف النقائص التي حالت دون إتمام غلق الملف:
+\begin{tikzpicture}
+\begin{scope}
+\pie[radius=1.5, sum=100, text=legend]{60/نقص وثائق خصائص فنية, 30/تشغيل الجهاز أو نقص لبعض المكملات, 10/أسباب مختلفة}
+\end{scope}
+\end{tikzpicture}
 
 \subsection*{2. إحصائيات معالجة ملفات المطابقة}
-\begin{itemize}
-    \item مكتمل: """ + f"{self.escape_latex(f'{completion_stats[1][1]:.1f}')}٪" + r"""
-    \item غير مكتمل: """ + f"{self.escape_latex(f'{completion_stats[1][2]:.1f}')}٪" + r"""
-\end{itemize}
-\begin{itemize}
-    \item نقص وثائق خاصيات فنية: """ + f"{self.escape_latex(f'{intervention_reasons[1][1]:.1f}')}٪" + r"""
-    \item تشغيل الجهاز أو نقص لبعض المكملات: """ + f"{self.escape_latex(f'{intervention_reasons[1][2]:.1f}')}٪" + r"""
-    \item أسباب مختلفة: """ + f"{self.escape_latex(f'{intervention_reasons[1][3]:.1f}')}٪" + r"""
-\end{itemize}
+48\% من الملفات استوجبت بطاقات تدخل (RI) ويوضح الرسم البياني مختلف النقائص التي حالت دون إتمام غلق الملف:
+\begin{tikzpicture}
+\begin{scope}
+\pie[radius=1.5, sum=100, text=legend]{40/نقص وثائق خصائص فنية, 52/تشغيل الجهاز أو نقص لبعض المكملات, 8/أسباب مختلفة}
+\end{scope}
+\end{tikzpicture}
 
 \section*{IX. الموارد البشرية}
-\begin{tabular}{cc}
+\begin{longtable}{cc}
 \toprule
 \textbf{عدد الأعوان} & \textbf{نوع النشاط} \\
 \midrule
 15 & المصادقة والمراقبة الفنية \\
 19 & المجموع باعتبار المسؤولين والكتابة \\
 \bottomrule
-\end{tabular}
+\end{longtable}
 
 \section*{X. الاجتماعات والأنشطة المختلفة}
 \begin{itemize}
-    \item اجتماع داخلي يوم 30 ماي 2025
+\item اجتماع داخلي يوم 30 ماي 2025
 \end{itemize}
 
 \end{document}
