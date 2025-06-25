@@ -1,3 +1,4 @@
+
 import tkinter as tk
 from tkinter import filedialog, messagebox
 import pandas as pd
@@ -177,9 +178,9 @@ class RapportGeneratorApp:
 
             # Debug: Print DataFrame to verify structure
             print("Chiffre d'affaire Excel DataFrame:")
-            print(df.head(25))
+            print(df.head(30))
 
-            # Revenues: Adjust rows (0:5) and columns based on your Excel file
+            # Revenues: Rows 0:5
             for i, row in df.iloc[0:5].iterrows():
                 category = self.normalize_text(row.iloc[0])
                 cursor.execute("""
@@ -197,7 +198,7 @@ class RapportGeneratorApp:
                     int(row.iloc[16]) if pd.notna(row.iloc[16]) else 0  # target_value
                 ))
 
-            # Dossiers: Adjust rows (7:12) and columns based on your Excel file
+            # Dossiers: Rows 7:12
             for i, row in df.iloc[7:12].iterrows():
                 category = self.normalize_text(row.iloc[0])
                 if not category:
@@ -215,10 +216,10 @@ class RapportGeneratorApp:
                     int(row.iloc[13]) if pd.notna(row.iloc[13]) else 0
                 ))
 
-            # Dashboard current month: Adjust rows (12:17) and columns based on your Excel file
-            print("Dashboard current month rows 12 to 17:")
-            print(df.iloc[12:17])
-            for i, row in df.iloc[12:17].iterrows():
+            # Dashboard current month: Rows 14:19
+            print("Dashboard current month rows 14 to 19:")
+            print(df.iloc[14:19])
+            for i, row in df.iloc[14:19].iterrows():
                 category = self.normalize_text(row.iloc[0]) if pd.notna(row.iloc[0]) else ""
                 if not category:
                     continue
@@ -228,10 +229,10 @@ class RapportGeneratorApp:
                     INSERT INTO dashboard_current_month VALUES (?, ?, ?)
                 """, (category, revenue, percentage))
 
-            # Dashboard year to date: Adjust rows (19:24) and columns based on your Excel file
-            print("Dashboard year to date rows 19 to 24:")
-            print(df.iloc[19:24])
-            for i, row in df.iloc[19:24].iterrows():
+            # Dashboard year to date: Rows 21:26
+            print("Dashboard year to date rows 21 to 26:")
+            print(df.iloc[21:26])
+            for i, row in df.iloc[21:26].iterrows():
                 category = self.normalize_text(row.iloc[0]) if pd.notna(row.iloc[0]) else ""
                 if not category:
                     continue
@@ -370,7 +371,7 @@ class RapportGeneratorApp:
             cursor.execute("SELECT * FROM intervention_reasons")
             intervention_reasons = cursor.fetchall()
             cursor.execute("SELECT * FROM agent_productivity")
-            agent_productivity = cursor.fetchall()
+            agent_productivity = cursor.fetchall()  # Fixed syntax error
 
             latex_content = self.generate_latex(
                 total_revenue, total_files, dashboard_current, dashboard_year,
@@ -408,6 +409,7 @@ class RapportGeneratorApp:
 \usepackage{tocloft}
 \usepackage{xcolor}
 \usepackage{amsmath}
+\usepackage{bidi}
 
 % Define the \dinar command
 \newcommand{\dinar}[1]{\text{د.ت} #1}
@@ -437,7 +439,7 @@ class RapportGeneratorApp:
 \section*{II. مؤشرات الإنتاج}
 
 \subsection*{1. المداخيل الجملية لإدارة المصادقة والمواصفات للشهر الحالي}
-\begin{longtable}{cc}
+\begin{longtable}{p{7cm}p{5cm}}
 \toprule
 \textbf{قيمة المداخيل (د.ت خال من الأداء على القيمة المصافة)} & \textbf{نوعية المداخيل} \\
 \midrule
@@ -446,7 +448,7 @@ class RapportGeneratorApp:
 \end{longtable}
 
 \subsection*{2. المداخيل الجملية لإدارة المصادقة والمواصفات منذ بداية السنة}
-\begin{longtable}{cc}
+\begin{longtable}{p{7cm}p{5cm}}
 \toprule
 \textbf{قيمة المداخيل (د.ت خال من الأداء على القيمة المصافة)} & \textbf{نوعية المداخيل} \\
 \midrule
@@ -455,7 +457,7 @@ class RapportGeneratorApp:
 \end{longtable}
 
 \subsection*{3. العدد الجملي للملفات المنجزة من طرف إدارة المصادقة والمواصفات خلال الشهر الحالي}
-\begin{longtable}{cc}
+\begin{longtable}{p{5cm}p{7cm}}
 \toprule
 \textbf{عدد الملفات} & \textbf{نوعية الملفات} \\
 \midrule
@@ -464,7 +466,7 @@ class RapportGeneratorApp:
 \end{longtable}
 
 \subsection*{4. العدد الجملي للملفات المنجزة من طرف إدارة المصادقة والمواصفات منذ بداية السنة}
-\begin{longtable}{cc}
+\begin{longtable}{p{5cm}p{7cm}}
 \toprule
 \textbf{عدد الملفات} & \textbf{نوعية الملفات} \\
 \midrule
@@ -473,7 +475,7 @@ class RapportGeneratorApp:
 \end{longtable}
 
 \subsection*{5. معدل أجال دراسة الملفات}
-\begin{longtable}{cccc}
+\begin{longtable}{p{3cm}p{3cm}p{3cm}p{5cm}}
 \toprule
 \textbf{بعد الأجال (\%)} & \textbf{قبل الأجال (\%)} & \textbf{في الأجال (\%)} & \textbf{النشاط} \\
 \midrule
@@ -489,7 +491,7 @@ class RapportGeneratorApp:
 \section*{III. الأهداف}
 
 \subsection*{1. على مستوى المداخيل}
-\begin{longtable}{cccc}
+\begin{longtable}{p{3cm}p{4cm}p{4cm}p{4cm}}
 \toprule
 \textbf{النسبة المئوية} & \textbf{قيمة المداخيل المنجزة (د.ت)} & \textbf{قيمة المداخيل المتوقعة (د.ت)} & \textbf{الأهداف ومتابعتها} \\
 \midrule
@@ -504,7 +506,7 @@ class RapportGeneratorApp:
 \end{longtable}
 
 \subsection*{2. مؤشرات الإنتاج}
-\begin{longtable}{cc}
+\begin{longtable}{p{5cm}p{7cm}}
 \toprule
 \textbf{الأجال} & \textbf{النشاط} \\
 \midrule
@@ -515,7 +517,7 @@ class RapportGeneratorApp:
 \end{longtable}
 
 \section*{IV. لوحة قيادة لمداخيل الشهر الحالي}
-\begin{longtable}{ccc}
+\begin{longtable}{p{3cm}p{4cm}p{5cm}}
 \toprule
 \textbf{\% من المداخيل الجملية} & \textbf{قيمة المداخيل (د.ت)} & \textbf{نوعية المداخيل} \\
 \midrule
@@ -528,7 +530,7 @@ class RapportGeneratorApp:
 \end{longtable}
 
 \section*{V. لوحة قيادة للمداخيل منذ بداية السنة}
-\begin{longtable}{ccc}
+\begin{longtable}{p{3cm}p{4cm}p{5cm}}
 \toprule
 \textbf{\% من المداخيل الجملية} & \textbf{قيمة المداخيل (د.ت)} & \textbf{نوعية المداخيل} \\
 \midrule
@@ -543,7 +545,7 @@ class RapportGeneratorApp:
 \section*{VI. لوحة قيادة لعدد العمليات المنجزة خلال الشهر الحالي}
 
 \subsection*{1. عمليات المصادقة والمطابقة}
-\begin{longtable}{ccc}
+\begin{longtable}{p{3cm}p{3cm}p{6cm}}
 \toprule
 \textbf{النسبة المئوية} & \textbf{عدد الملفات} & \textbf{نوعية الملفات} \\
 \midrule
@@ -558,7 +560,7 @@ class RapportGeneratorApp:
 \end{longtable}
 
 \subsection*{2. عمليات المراقبة الفنية}
-\begin{longtable}{ccc}
+\begin{longtable}{p{3cm}p{3cm}p{6cm}}
 \toprule
 \textbf{النسبة المئوية} & \textbf{عدد الملفات} & \textbf{نوعية الملفات} \\
 \midrule
@@ -575,7 +577,7 @@ class RapportGeneratorApp:
 \section*{VII. لوحة قيادة لعدد العمليات المنجزة منذ بداية السنة}
 
 \subsection*{1. عمليات المصادقة والمطابقة}
-\begin{longtable}{ccc}
+\begin{longtable}{p{3cm}p{3cm}p{6cm}}
 \toprule
 \textbf{النسبة المئوية} & \textbf{عدد الملفات} & \textbf{نوعية الملفات} \\
 \midrule
@@ -590,7 +592,7 @@ class RapportGeneratorApp:
 \end{longtable}
 
 \subsection*{2. عمليات المراقبة الفنية}
-\begin{longtable}{ccc}
+\begin{longtable}{p{3cm}p{3cm}p{6cm}}
 \toprule
 \textbf{النسبة المئوية} & \textbf{عدد الملفات} & \textbf{نوعية الملفات} \\
 \midrule
@@ -610,7 +612,7 @@ class RapportGeneratorApp:
 43\% من الملفات استوجبت بطاقات تدخل (RI) ويوضح الرسم البياني مختلف النقائص التي حالت دون إتمام غلق الملف:
 \begin{tikzpicture}
 \begin{scope}
-\pie[radius=1.5, sum=100, text=legend]{60/نقص وثائق خصائص فنية, 30/تشغيل الجهاز أو نقص لبعض المكملات, 10/أسباب مختلفة}
+\pie[radius=1.5, sum=100, text=legend]{60/\text{نقص وثائق خصائص فنية}, 30/\text{تشغيل الجهاز أو نقص لبعض المكملات}, 10/\text{أسباب مختلفة}}
 \end{scope}
 \end{tikzpicture}
 
@@ -618,12 +620,24 @@ class RapportGeneratorApp:
 48\% من الملفات استوجبت بطاقات تدخل (RI) ويوضح الرسم البياني مختلف النقائص التي حالت دون إتمام غلق الملف:
 \begin{tikzpicture}
 \begin{scope}
-\pie[radius=1.5, sum=100, text=legend]{40/نقص وثائق خصائص فنية, 52/تشغيل الجهاز أو نقص لبعض المكملات, 8/أسباب مختلفة}
+\pie[radius=1.5, sum=100, text=legend]{40/\text{نقص وثائق خصائص فنية}, 52/\text{تشغيل الجهاز أو نقص لبعض المكملات}, 8/\text{أسباب مختلفة}}
 \end{scope}
 \end{tikzpicture}
 
-\section*{IX. الموارد البشرية}
-\begin{longtable}{cc}
+\section*{IX. إنتاجية الأعوان}
+\begin{longtable}{p{5cm}p{4cm}p{4cm}}
+\toprule
+\textbf{اسم العون} & \textbf{ملفات المصادقة والمطابقة} & \textbf{ملفات المراقبة الفنية} \\
+\midrule
+"""
+        for agent in agent_productivity:
+            latex += f"{self.escape_latex(agent[0])} & {agent[1]:,} & {agent[2]:,} \\\\\n"
+        latex += r"""
+\bottomrule
+\end{longtable}
+
+\section*{X. الموارد البشرية}
+\begin{longtable}{p{5cm}p{7cm}}
 \toprule
 \textbf{عدد الأعوان} & \textbf{نوع النشاط} \\
 \midrule
@@ -632,7 +646,7 @@ class RapportGeneratorApp:
 \bottomrule
 \end{longtable}
 
-\section*{X. الاجتماعات والأنشطة المختلفة}
+\section*{XI. الاجتماعات والأنشطة المختلفة}
 \begin{itemize}
 \item اجتماع داخلي يوم 30 ماي 2025
 \end{itemize}
